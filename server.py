@@ -14,6 +14,7 @@ from agent_runtime import ResearchDesk
 from paper_broker import PaperBroker
 from paper_scheduler import PaperScheduler
 from binance_tr import symbols as tr_symbols, klines as tr_klines
+from llm_local import assess as llm_assess
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "kudret.sqlite3"
