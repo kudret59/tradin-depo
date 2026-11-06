@@ -5,7 +5,7 @@ class PaperBroker:
   self.path=str(path)
   with sqlite3.connect(self.path) as db:
    db.execute("CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY,cash REAL)")
-   db.execute("INSERT OR IGNORE INTO account VALUES(1,10000)")
+   db.execute("INSERT OR IGNORE INTO account VALUES(1,100000)")
    db.execute("CREATE TABLE IF NOT EXISTS positions(symbol TEXT PRIMARY KEY,qty REAL,entry REAL,stop REAL,target REAL)")
    db.execute("CREATE TABLE IF NOT EXISTS fills(id INTEGER PRIMARY KEY,ts INTEGER,symbol TEXT,side TEXT,qty REAL,price REAL,fee REAL,pnl REAL)")
  def snapshot(self,prices=None):
@@ -13,7 +13,7 @@ class PaperBroker:
    cash=db.execute("SELECT cash FROM account").fetchone()[0]
    ps=[dict(zip(("symbol","qty","entry","stop","target"),r)) for r in db.execute("SELECT * FROM positions")]
    fills=[dict(zip(("ts","symbol","side","qty","price","fee","pnl"),r)) for r in db.execute("SELECT ts,symbol,side,qty,price,fee,pnl FROM fills ORDER BY id DESC LIMIT 50")]
-  return {"cash":round(cash,2),"equity_estimate":round(cash+sum(p["qty"]*(prices or {}).get(p["symbol"],p["entry"]) for p in ps),2),"positions":ps,"fills":fills,"mode":"PAPER_ONLY"}
+  return {"cash":round(cash,2),"equity_estimate":round(cash+sum(p["qty"]*(prices or {}).get(p["symbol"],p["entry"]) for p in ps),2),"positions":ps,"fills":fills,"mode":"PAPER_ONLY","currency":"TRY"}
  def open(self,symbol,price,stop,target,quote_ts):
   now=time.time()
   if now-quote_ts>300 or quote_ts>now+30: raise ValueError("Stale quote")
