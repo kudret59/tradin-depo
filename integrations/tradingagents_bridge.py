@@ -33,8 +33,8 @@ def run(symbol, day, analysts=("market","social","news","fundamentals")):
     config["results_dir"]=os.path.abspath("tradingagents_results")
     config["data_cache_dir"]=os.path.abspath("tradingagents_cache")
     graph=TradingAgentsGraph(selected_analysts=list(analysts),debug=False,config=config)
-    _,decision=graph.propagate(symbol,day)
-    return {"symbol":symbol,"date":day,"decision":str(decision),"type":"LLM_RESEARCH_ONLY","order_sent":False,"note":"Not a trade recommendation; verify cryptocurrency symbol/data provider compatibility."}
+    _,decision=graph.propagate(symbol,day,asset_type="crypto")
+    return {"symbol":symbol,"date":day,"decision":str(decision),"type":"LLM_RESEARCH_ONLY","order_sent":False,"note":"Crypto research pipeline selected; verify source symbol and data-provider compatibility."}
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--symbol",required=True)
