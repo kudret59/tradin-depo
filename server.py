@@ -11,12 +11,15 @@ from pathlib import Path
 from urllib.parse import urlparse
 from engine import analyze
 from agent_runtime import ResearchDesk
+from paper_broker import PaperBroker
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "kudret.sqlite3"
 STATE = {"status":"idle","updated":None,"error":None,"results":[],"events":[],"scanning":False}
 LOCK = threading.Lock()
 DESK = None
+BROKER = None
+QUOTE_TS = {}
 BASE = "https://api.binance.com"
 HEADERS = {"User-Agent":"KUDRET-AI-Research/1.0"}
 def fetch_json(path):
@@ -41,7 +44,7 @@ def scan():
         event("Orkestratör","Binance spot evreni sorgulanıyor")
         info = fetch_json("/api/v3/exchangeInfo")
         tickers = fetch_json("/api/v3/ticker/24hr")
-        eligible = {s["symbol"] for s in info["symbols"] if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT" and s.get("isSpotTradingAllowed",False) and not s["symbol"].endswith(("UPUSDT","DOWNUSDT","BULLUSDT","BEARUSDT"))}
+        eligible = {s["symbol"] for s in info["symbols"] if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT" and s.get("isSpotTradingAllowed",True) and not s["symbol"].endswith(("UPUSDT","DOWNUSDT","BULLUSDT","BEARUSDT"))}
         ranked = sorted((t for t in tickers if t.get("symbol") in eligible),key=lambda x:float(x.get("quoteVolume",0)),reverse=True)
         results=[]
         for t in ranked[:25]:
@@ -52,11 +55,15 @@ def scan():
                 closed=[c for c in raw if int(c[6]) < now]
                 report=analyze(symbol,closed)
                 results.append(report)
+                QUOTE_TS[symbol]=time.time()
                 event("Coin Avcısı",f"{symbol}: {report['score']}/100 — {report['signal']}")
             except (ValueError,KeyError,IndexError,urllib.error.URLError) as ex:
                 event("Veri Denetçisi",f"{symbol} atlandı: {str(ex)[:100]}")
             time.sleep(.12)
         results.sort(key=lambda x:x["score"],reverse=True)
+        quotes={r["symbol"]:(r["price"],QUOTE_TS[r["symbol"]]) for r in results}
+        for closed in BROKER.check_exits(quotes):
+            event("Sanal İşlem",f"Pozisyon kapandı: {closed}")
         with LOCK:
             STATE.update(status="ready",updated=int(time.time()),results=results)
         event("Baş Asistan",f"{len(results)} parite analiz edildi; gerçek emir gönderilmedi")
@@ -85,6 +92,10 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 payload={k:(v.copy() if isinstance(v,list) else v) for k,v in STATE.items()}
             return self.send(200,json.dumps(payload,ensure_ascii=False))
+        if path=="/api/paper":
+            with LOCK:
+                prices={r["symbol"]:r["price"] for r in STATE["results"]}
+            return self.send(200,json.dumps(BROKER.snapshot(prices),ensure_ascii=False))
         if path=="/api/agents":
             return self.send(200,json.dumps(DESK.snapshot(),ensure_ascii=False))
         if path=="/api/health":
@@ -109,6 +120,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__=="__main__":
     db_init()
     DESK=ResearchDesk(DB)
+    BROKER=PaperBroker(DB)
     port=int(os.getenv("PORT","8765"))
     print(f"KUDRET AI: http://localhost:{port} (paper-only)")
     ThreadingHTTPServer(("127.0.0.1",port),Handler).serve_forever()
