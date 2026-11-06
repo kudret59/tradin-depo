@@ -22,6 +22,7 @@ LOCK = threading.Lock()
 DESK = None
 BROKER = None
 SCHEDULER = None
+LLM_STATE = {"status":"idle","last_report":None,"error":None}
 QUOTE_TS = {}
 BASE = "https://api.binance.com"
 HEADERS = {"User-Agent":"KUDRET-AI-Research/1.0"}
@@ -67,6 +68,18 @@ def scan():
         if not results:
             raise ValueError("No validated Binance TR candles; paper trading suspended")
         results.sort(key=lambda x:x["score"],reverse=True)
+        if os.getenv("KUDRET_AUTO_LLM")=="1":
+            LLM_STATE["status"]="running"
+            try:
+                snapshot={"market":"Binance TR TRY","candidates":results[:5]}
+                LLM_STATE["last_report"]=llm_assess(snapshot)
+                LLM_STATE["status"]="done"
+                LLM_STATE["error"]=None
+                event("Yerel AI", "Piyasa araştırma raporu hazır; emir yetkisi yok")
+            except Exception as exc:
+                LLM_STATE["status"]="failed"
+                LLM_STATE["error"]=f"{type(exc).__name__}: {str(exc)[:160]}"
+                event("Yerel AI", "Model bağlantısı başarısız; analiz raporu üretilmedi")
         quotes={r["symbol"]:(r["price"],QUOTE_TS[r["symbol"]]) for r in results}
         for closed in BROKER.check_exits(quotes):
             event("Sanal İşlem",f"Pozisyon kapandı: {closed}")
@@ -98,6 +111,8 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 payload={k:(v.copy() if isinstance(v,list) else v) for k,v in STATE.items()}
             return self.send(200,json.dumps(payload,ensure_ascii=False))
+        if path=="/api/llm":
+            return self.send(200,json.dumps(LLM_STATE,ensure_ascii=False))
         if path=="/api/paper":
             with LOCK:
                 prices={r["symbol"]:r["price"] for r in STATE["results"]}
