@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from engine import analyze
 from agent_runtime import ResearchDesk
 from paper_broker import PaperBroker
+from paper_scheduler import PaperScheduler
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "kudret.sqlite3"
@@ -19,6 +20,7 @@ STATE = {"status":"idle","updated":None,"error":None,"results":[],"events":[],"s
 LOCK = threading.Lock()
 DESK = None
 BROKER = None
+SCHEDULER = None
 QUOTE_TS = {}
 BASE = "https://api.binance.com"
 HEADERS = {"User-Agent":"KUDRET-AI-Research/1.0"}
@@ -121,6 +123,9 @@ if __name__=="__main__":
     db_init()
     DESK=ResearchDesk(DB)
     BROKER=PaperBroker(DB)
+    if os.getenv("KUDRET_AUTO_SCAN")=="1":
+        SCHEDULER=PaperScheduler(scan,lambda: dict(STATE),BROKER,event,int(os.getenv("KUDRET_SCAN_INTERVAL","300")))
+        SCHEDULER.start()
     port=int(os.getenv("PORT","8765"))
     print(f"KUDRET AI: http://localhost:{port} (paper-only)")
     ThreadingHTTPServer(("127.0.0.1",port),Handler).serve_forever()
