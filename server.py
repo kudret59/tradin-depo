@@ -10,11 +10,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 from engine import analyze
+from agent_runtime import ResearchDesk
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "kudret.sqlite3"
 STATE = {"status":"idle","updated":None,"error":None,"results":[],"events":[],"scanning":False}
 LOCK = threading.Lock()
+DESK = None
 BASE = "https://api.binance.com"
 HEADERS = {"User-Agent":"KUDRET-AI-Research/1.0"}
 def fetch_json(path):
@@ -83,15 +85,21 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 payload={k:(v.copy() if isinstance(v,list) else v) for k,v in STATE.items()}
             return self.send(200,json.dumps(payload,ensure_ascii=False))
+        if path=="/api/agents":
+            return self.send(200,json.dumps(DESK.snapshot(),ensure_ascii=False))
         if path=="/api/health":
             return self.send(200,'{"ok":true,"mode":"paper-only"}')
         return self.send(404,'{"error":"not found"}')
     def do_POST(self):
-        if urlparse(self.path).path!="/api/scan":
+        endpoint=urlparse(self.path).path
+        if endpoint not in ("/api/scan","/api/research"):
             return self.send(404,'{"error":"not found"}')
         # Localhost-only; before public deployment implement authentication + CSRF protection.
         if self.client_address[0] not in ("127.0.0.1","::1"):
             return self.send(403,'{"error":"local access only"}')
+        if endpoint=="/api/research":
+            started=DESK.start()
+            return self.send(202 if started else 409,json.dumps({"started":started}))
         with LOCK:
             if STATE["scanning"]:
                 return self.send(409,'{"error":"scan already running"}')
@@ -100,6 +108,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(202,'{"started":true}')
 if __name__=="__main__":
     db_init()
+    DESK=ResearchDesk(DB)
     port=int(os.getenv("PORT","8765"))
     print(f"KUDRET AI: http://localhost:{port} (paper-only)")
     ThreadingHTTPServer(("127.0.0.1",port),Handler).serve_forever()
